@@ -2,13 +2,14 @@ import gradio as gr
 import requests
 import os
 
-# Load Hugging Face token from Secrets
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
 headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
 
-# Hugging Face models
 SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
 KEYWORD_MODEL = "ml6team/keyphrase-extraction-kbir"
+
+INFERENCE_API_URL = "https://router.huggingface.co/hf-inference"
+
 
 def single_text_analysis(text):
     if not text.strip():
