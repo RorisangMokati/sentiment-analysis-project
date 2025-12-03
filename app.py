@@ -1,7 +1,8 @@
 import gradio as gr
 import requests
+import os
 
-HF_API_TOKEN = ".."  # <-- put your Hugging Face API token here
+HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
 SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment"
 KEYWORD_MODEL = "ml6team/keyphrase-extraction-kbir"
 headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
