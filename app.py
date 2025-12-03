@@ -11,24 +11,33 @@ def single_text_analysis(text):
     if not text.strip():
         return "No text provided", "", ""
 
-    # Sentiment analysis
-    sentiment_resp = requests.post(
-        f"https://api-inference.huggingface.co/models/{SENTIMENT_MODEL}",
-        headers=headers,
-        json={"inputs": text}
-    )
-    sentiment = sentiment_resp.json()[0][0]['label']
-    score = sentiment_resp.json()[0][0]['score']
+    try:
+        # Sentiment
+        sentiment_resp = requests.post(
+            f"https://api-inference.huggingface.co/models/{SENTIMENT_MODEL}",
+            headers=headers,
+            json={"inputs": text}
+        )
+        sentiment_resp.raise_for_status()  # raise error if request fails
+        sentiment_data = sentiment_resp.json()
+        sentiment = sentiment_data[0][0]['label']
+        score = sentiment_data[0][0]['score']
 
-    # Keyword extraction
-    keyword_resp = requests.post(
-        f"https://api-inference.huggingface.co/models/{KEYWORD_MODEL}",
-        headers=headers,
-        json={"inputs": text}
-    )
-    keywords = [k['text'] for k in keyword_resp.json()[0]]
+        # Keywords
+        keyword_resp = requests.post(
+            f"https://api-inference.huggingface.co/models/{KEYWORD_MODEL}",
+            headers=headers,
+            json={"inputs": text}
+        )
+        keyword_resp.raise_for_status()
+        keywords_data = keyword_resp.json()
+        keywords = [k['text'] for k in keywords_data[0]]
 
-    return sentiment, f"{score:.2f}", ", ".join(keywords)
+        return sentiment, f"{score:.2f}", ", ".join(keywords)
+
+    except Exception as e:
+        return "Error", "Error", str(e)
+
 
 demo = gr.Interface(
     fn=single_text_analysis,
