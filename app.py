@@ -2,28 +2,34 @@ import gradio as gr
 import requests
 import os
 
+# Load Hugging Face token from Secrets
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
-SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment"
-KEYWORD_MODEL = "ml6team/keyphrase-extraction-kbir"
 headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
+
+# Hugging Face models
+SENTIMENT_MODEL = "cardiffnlp/twitter-roberta-base-sentiment-latest"
+KEYWORD_MODEL = "ml6team/keyphrase-extraction-kbir"
 
 def single_text_analysis(text):
     if not text.strip():
         return "No text provided", "", ""
 
     try:
-        # Sentiment
+        # Sentiment analysis
         sentiment_resp = requests.post(
             f"https://api-inference.huggingface.co/models/{SENTIMENT_MODEL}",
             headers=headers,
             json={"inputs": text}
         )
-        sentiment_resp.raise_for_status()  # raise error if request fails
+        sentiment_resp.raise_for_status()
         sentiment_data = sentiment_resp.json()
+        # Check if the API returned an error message instead of list
+        if isinstance(sentiment_data, dict) and sentiment_data.get("error"):
+            return "Model loading, try again...", "", ""
         sentiment = sentiment_data[0][0]['label']
         score = sentiment_data[0][0]['score']
 
-        # Keywords
+        # Keyword extraction
         keyword_resp = requests.post(
             f"https://api-inference.huggingface.co/models/{KEYWORD_MODEL}",
             headers=headers,
@@ -31,14 +37,17 @@ def single_text_analysis(text):
         )
         keyword_resp.raise_for_status()
         keywords_data = keyword_resp.json()
-        keywords = [k['text'] for k in keywords_data[0]]
+        if isinstance(keywords_data, dict) and keywords_data.get("error"):
+            keywords = []
+        else:
+            keywords = [k['text'] for k in keywords_data[0]]
 
         return sentiment, f"{score:.2f}", ", ".join(keywords)
 
     except Exception as e:
         return "Error", "Error", str(e)
 
-
+# Gradio interface
 demo = gr.Interface(
     fn=single_text_analysis,
     inputs=gr.Textbox(lines=4, label="Enter text"),
@@ -46,6 +55,9 @@ demo = gr.Interface(
         gr.Textbox(label="Sentiment"),
         gr.Textbox(label="Confidence"),
         gr.Textbox(label="Keywords")
-    ]
+    ],
+    title="Sentiment Analysis Dashboard",
+    description="Analyze the sentiment of your text and extract keywords using Hugging Face models."
 )
+
 demo.launch()
