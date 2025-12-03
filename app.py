@@ -1,6 +1,8 @@
 import gradio as gr
 import requests
 import os
+from huggingface_hub import InferenceClient
+
 
 HF_API_TOKEN = os.environ.get("HF_API_TOKEN")
 headers = {"Authorization": f"Bearer {HF_API_TOKEN}"}
