@@ -1,3 +1,5 @@
 huggingface-hub
 gradio
 requests
+plotly
+
