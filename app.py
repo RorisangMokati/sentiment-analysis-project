@@ -1,35 +1,42 @@
 import gradio as gr
-import json
 import pandas as pd
 import tempfile
 import plotly.express as px
+from transformers import pipeline
+
+# -----------------------------
+# HUGGING FACE SENTIMENT PIPELINE
+# -----------------------------
+# Make sure you have transformers installed: pip install transformers
+sentiment_model = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
 
 # -----------------------------
 # SENTIMENT FUNCTION
 # -----------------------------
 def analyze_sentiment(text):
+    """Use Hugging Face model for single sentence"""
     if not text or text.strip() == "":
         return "Enter text first", "0%", "No text"
 
-    text_lower = text.lower()
+    try:
+        result = sentiment_model(text)[0]  # {'label': 'POSITIVE', 'score': 0.99}
+        label = result["label"]
+        score = result["score"]
+        confidence = f"{score*100:.0f}%"
 
-    positive_words = ["love", "fantastic", "excellent"]
-    negative_words = ["hate", "terrible", "worst"]
-    neutral_words  = ["okay", "fine", "average"]
+        # Add emojis
+        emoji = "😊" if label == "POSITIVE" else "😠" if label == "NEGATIVE" else "😐"
+        sentiment = f"{emoji} {label}"
 
-    matched = [w for w in positive_words + negative_words + neutral_words if w in text_lower]
+        # Extract keywords (simple top 3 words ignoring stopwords)
+        stopwords = {"the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "is", "are", "was", "were", "i", "you", "he", "she", "it", "we", "they"}
+        words = [w.lower().strip(".,!?") for w in text.split() if w.lower() not in stopwords and len(w) > 2]
+        keywords = ", ".join(words[:3]) if words else "No keywords"
 
-    if any(w in text_lower for w in positive_words):
-        return "😊 POSITIVE", "94%", ", ".join(matched)
-    elif any(w in text_lower for w in negative_words):
-        return "😠 NEGATIVE", "89%", ", ".join(matched)
-    elif any(w in text_lower for w in neutral_words):
-        return "😐 NEUTRAL", "76%", ", ".join(matched)
+        return sentiment, confidence, keywords
 
-    if len(text.split()) > 5:
-        return "🤔 NEUTRAL", "68%", "multiple words detected"
-    else:
-        return "😐 NEUTRAL", "72%", "short text"
+    except Exception as e:
+        return "Error", "0%", str(e)
 
 # -----------------------------
 # BATCH PROCESSING
@@ -37,14 +44,11 @@ def analyze_sentiment(text):
 def analyze_batch(input_text):
     if not input_text or input_text.strip() == "":
         return []
-
     lines = [l.strip() for l in input_text.split("\n") if l.strip()]
     results = []
-
     for line in lines:
         sentiment, confidence, keywords = analyze_sentiment(line)
         results.append([line, sentiment, confidence, keywords])
-
     return results
 
 # -----------------------------
@@ -53,25 +57,20 @@ def analyze_batch(input_text):
 def process_file(file):
     if file is None:
         return []
-
     # TXT files
     if file.name.endswith(".txt"):
         content = file.read().decode("utf-8")
         lines = [l.strip() for l in content.split("\n") if l.strip()]
-
     # CSV files
     elif file.name.endswith(".csv"):
         df = pd.read_csv(file)
         lines = df.iloc[:, 0].astype(str).tolist()
-
     else:
         return []
-
     results = []
     for line in lines:
         sentiment, confidence, keywords = analyze_sentiment(line)
         results.append([line, sentiment, confidence, keywords])
-
     return results
 
 # -----------------------------
@@ -86,8 +85,7 @@ def export_csv(data):
 def export_json(data):
     df = pd.DataFrame(data, columns=["Text", "Sentiment", "Confidence", "Keywords"])
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-    with open(tmp.name, "w") as f:
-        f.write(df.to_json(orient="records", indent=2))
+    df.to_json(tmp.name, orient="records", indent=2)
     return tmp.name
 
 # -----------------------------
@@ -96,14 +94,14 @@ def export_json(data):
 def sentiment_chart(data):
     if not data or len(data) == 0:
         return px.pie(values=[1], names=["No data"], title="Sentiment Distribution")
-
     sentiments = []
     for row in data:
-        s = row[1].split()[-1]  # "😊 POSITIVE" → "POSITIVE"
+        s = row[1].split()[-1]  # Extract label without emoji
         sentiments.append(s)
-
     df = pd.DataFrame({"Sentiment": sentiments})
-    fig = px.pie(df, names="Sentiment", title="Sentiment Distribution")
+    fig = px.pie(df, names="Sentiment", title="Sentiment Distribution",
+                 color="Sentiment",
+                 color_discrete_map={"POSITIVE":"green","NEGATIVE":"red","NEUTRAL":"gray"})
     return fig
 
 # -----------------------------
@@ -112,69 +110,43 @@ def sentiment_chart(data):
 with gr.Blocks(title="📊 Sentiment Analysis Dashboard") as demo:
 
     gr.Markdown("# 📊 Sentiment Analysis Dashboard")
-    gr.Markdown("Supports **single analysis**, **batch text**, **file upload**, and **multiple export options**.")
+    gr.Markdown("Supports **single analysis**, **batch text**, **file upload**, **export**, and **charts**.")
 
     # ---------------- Single Text ----------------
     with gr.Tab("📝 Single Text"):
         input_single = gr.Textbox(label="Enter Text", lines=3)
         btn_single = gr.Button("Analyze")
-
         output_sentiment = gr.Textbox(label="Sentiment")
         output_confidence = gr.Textbox(label="Confidence")
         output_keywords = gr.Textbox(label="Keywords")
-
-        btn_single.click(analyze_sentiment, input_single,
-                         [output_sentiment, output_confidence, output_keywords])
+        btn_single.click(analyze_sentiment, input_single, [output_sentiment, output_confidence, output_keywords])
 
     # ---------------- Batch Processing ----------------
     with gr.Tab("📦 Batch Processing (Text Area)"):
-        batch_input = gr.Textbox(
-            label="Enter one sentence per line",
-            lines=6,
-            placeholder="I love this!\nTerrible product.\nIt was fine."
-        )
+        batch_input = gr.Textbox(label="Enter one sentence per line", lines=6, placeholder="I love this!\nTerrible product.\nIt was fine.")
         btn_batch = gr.Button("Analyze Batch")
-
-        batch_output = gr.Dataframe(
-            headers=["Text", "Sentiment", "Confidence", "Keywords"],
-            label="Batch Results"
-        )
-
+        batch_output = gr.Dataframe(headers=["Text", "Sentiment", "Confidence", "Keywords"], label="Batch Results")
         btn_batch.click(analyze_batch, batch_input, batch_output)
 
     # ---------------- File Upload ----------------
     with gr.Tab("📁 Upload File (TXT / CSV)"):
         upload_file = gr.File(label="Upload file", file_types=[".txt", ".csv"])
         btn_file = gr.Button("Analyze File")
-
-        file_output = gr.Dataframe(
-            headers=["Text", "Sentiment", "Confidence", "Keywords"],
-            label="File Results"
-        )
-
+        file_output = gr.Dataframe(headers=["Text", "Sentiment", "Confidence", "Keywords"], label="File Results")
         btn_file.click(process_file, upload_file, file_output)
 
     # ---------------- Export ----------------
     with gr.Tab("⬇️ Export Results"):
-        export_input = gr.Dataframe(
-            headers=["Text", "Sentiment", "Confidence", "Keywords"],
-            label="Paste results here to export"
-        )
-
+        export_input = gr.Dataframe(headers=["Text", "Sentiment", "Confidence", "Keywords"], label="Paste results here to export")
         btn_export_csv = gr.DownloadButton(label="Download CSV")
         btn_export_json = gr.DownloadButton(label="Download JSON")
-
         btn_export_csv.click(export_csv, export_input, btn_export_csv)
         btn_export_json.click(export_json, export_input, btn_export_json)
 
     # ---------------- Charts ----------------
     with gr.Tab("📊 Charts"):
-        chart_input = gr.Dataframe(
-            headers=["Text", "Sentiment", "Confidence", "Keywords"],
-            label="Paste results here for charts"
-        )
+        chart_input = gr.Dataframe(headers=["Text", "Sentiment", "Confidence", "Keywords"], label="Paste results here for charts")
         chart_output = gr.Plot(label="Sentiment Chart")
-
         btn_chart = gr.Button("Generate Chart")
         btn_chart.click(sentiment_chart, chart_input, chart_output)
 
