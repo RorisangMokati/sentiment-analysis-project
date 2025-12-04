@@ -4,7 +4,6 @@ import pandas as pd
 import tempfile
 import plotly.express as px
 
-
 # -----------------------------
 # SENTIMENT FUNCTION
 # -----------------------------
@@ -62,7 +61,7 @@ def process_file(file):
 
     # CSV files
     elif file.name.endswith(".csv"):
-        df = pd.read_csv(file)   # use uploaded file
+        df = pd.read_csv(file)
         lines = df.iloc[:, 0].astype(str).tolist()
 
     else:
@@ -90,6 +89,22 @@ def export_json(data):
     with open(tmp.name, "w") as f:
         f.write(df.to_json(orient="records", indent=2))
     return tmp.name
+
+# -----------------------------
+# CHART FUNCTION
+# -----------------------------
+def sentiment_chart(data):
+    if not data or len(data) == 0:
+        return px.pie(values=[1], names=["No data"], title="Sentiment Distribution")
+
+    sentiments = []
+    for row in data:
+        s = row[1].split()[-1]  # "😊 POSITIVE" → "POSITIVE"
+        sentiments.append(s)
+
+    df = pd.DataFrame({"Sentiment": sentiments})
+    fig = px.pie(df, names="Sentiment", title="Sentiment Distribution")
+    return fig
 
 # -----------------------------
 # UI
@@ -146,42 +161,22 @@ with gr.Blocks(title="📊 Sentiment Analysis Dashboard") as demo:
             label="Paste results here to export"
         )
 
-        # FIXED: removed file_name argument
         btn_export_csv = gr.DownloadButton(label="Download CSV")
         btn_export_json = gr.DownloadButton(label="Download JSON")
 
         btn_export_csv.click(export_csv, export_input, btn_export_csv)
         btn_export_json.click(export_json, export_input, btn_export_json)
 
-def sentiment_chart(data):
-    """
-    data: list of lists [[text, sentiment, confidence, keywords], ...]
-    Returns a Plotly figure for Gradio
-    """
-    if not data or len(data) == 0:
-        return px.pie(values=[1], names=["No data"], title="Sentiment Distribution")
-
-    # Extract sentiment (ignore emojis)
-    sentiments = []
-    for row in data:
-        s = row[1].split()[-1]  # "😊 POSITIVE" → "POSITIVE"
-        sentiments.append(s)
-
-    df = pd.DataFrame({"Sentiment": sentiments})
-    fig = px.pie(df, names="Sentiment", title="Sentiment Distribution")
-    return fig
-
+    # ---------------- Charts ----------------
     with gr.Tab("📊 Charts"):
-    chart_input = gr.Dataframe(
-        headers=["Text", "Sentiment", "Confidence", "Keywords"],
-        label="Paste results here for charts"
-    )
-    chart_output = gr.Plot(label="Sentiment Chart")
+        chart_input = gr.Dataframe(
+            headers=["Text", "Sentiment", "Confidence", "Keywords"],
+            label="Paste results here for charts"
+        )
+        chart_output = gr.Plot(label="Sentiment Chart")
 
-    btn_chart = gr.Button("Generate Chart")
-    btn_chart.click(sentiment_chart, chart_input, chart_output)
-
-
+        btn_chart = gr.Button("Generate Chart")
+        btn_chart.click(sentiment_chart, chart_input, chart_output)
 
 # -----------------------------
 # Launch
