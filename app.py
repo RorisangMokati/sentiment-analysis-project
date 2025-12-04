@@ -2,6 +2,8 @@ import gradio as gr
 import json
 import pandas as pd
 import tempfile
+import plotly.express as px
+
 
 # -----------------------------
 # SENTIMENT FUNCTION
