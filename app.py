@@ -1,14 +1,12 @@
 import gradio as gr
-import csv
 import json
 import pandas as pd
-from io import StringIO
+import tempfile
  
 # -----------------------------
 # SENTIMENT FUNCTION
 # -----------------------------
 def analyze_sentiment(text):
-    """Simple sentiment logic."""
     if not text or text.strip() == "":
         return "Enter text first", "0%", "No text"
  
@@ -57,15 +55,14 @@ def process_file(file):
     if file is None:
         return []
  
-    # Detect file type
+    # TXT files
     if file.name.endswith(".txt"):
         content = file.read().decode("utf-8")
-        lines = content.split("\n")
+        lines = [l.strip() for l in content.split("\n") if l.strip()]
  
+    # CSV files
     elif file.name.endswith(".csv"):
-        df = pd.read_csv(file.name)
-        if df.shape[1] == 0:
-            return []
+        df = pd.read_csv(file)   # FIXED — use file, not filename
         lines = df.iloc[:, 0].astype(str).tolist()
  
     else:
@@ -73,9 +70,86 @@ def process_file(file):
  
     results = []
     for line in lines:
-        line = line.strip()
-        if line:
-            sentiment, confidence, keywords = analyze_sentiment(line)
-            results.append([line, sentiment, confidence, keywords])
+        sentiment, confidence, keywords = analyze_sentiment(line)
+        results.append([line, sentiment, confidence, keywords])
  
-    return resul
+    return results
+ 
+ 
+# -----------------------------
+# EXPORT FUNCTIONS (FIXED)
+# -----------------------------
+def export_csv(data):
+    df = pd.DataFrame(data, columns=["Text", "Sentiment", "Confidence", "Keywords"])
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+    df.to_csv(tmp.name, index=False)
+    return tmp.name
+ 
+ 
+def export_json(data):
+    df = pd.DataFrame(data, columns=["Text", "Sentiment", "Confidence", "Keywords"])
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+    with open(tmp.name, "w") as f:
+        f.write(df.to_json(orient="records", indent=2))
+    return tmp.name
+ 
+ 
+# -----------------------------
+# UI
+# -----------------------------
+with gr.Blocks(title="📊 Sentiment Analysis Dashboard") as demo:
+ 
+    gr.Markdown("# 📊 Sentiment Analysis Dashboard")
+    gr.Markdown("Supports **single analysis**, **batch text**, **file upload**, and **multiple export options**.")
+ 
+    with gr.Tab("📝 Single Text"):
+        input_single = gr.Textbox(label="Enter Text", lines=3)
+        btn_single = gr.Button("Analyze")
+ 
+        output_sentiment = gr.Textbox(label="Sentiment")
+        output_confidence = gr.Textbox(label="Confidence")
+        output_keywords = gr.Textbox(label="Keywords")
+ 
+        btn_single.click(analyze_sentiment, input_single,
+                         [output_sentiment, output_confidence, output_keywords])
+ 
+    with gr.Tab("📦 Batch Processing (Text Area)"):
+        batch_input = gr.Textbox(
+            label="Enter one sentence per line",
+            lines=6,
+            placeholder="I love this!\nTerrible product.\nIt was fine."
+        )
+        btn_batch = gr.Button("Analyze Batch")
+ 
+        batch_output = gr.Dataframe(
+            headers=["Text", "Sentiment", "Confidence", "Keywords"],
+            label="Batch Results"
+        )
+ 
+        btn_batch.click(analyze_batch, batch_input, batch_output)
+ 
+    with gr.Tab("📁 Upload File (TXT / CSV)"):
+        upload_file = gr.File(label="Upload file", file_types=[".txt", ".csv"])
+        btn_file = gr.Button("Analyze File")
+ 
+        file_output = gr.Dataframe(
+            headers=["Text", "Sentiment", "Confidence", "Keywords"],
+            label="File Results"
+        )
+ 
+        btn_file.click(process_file, upload_file, file_output)
+ 
+    with gr.Tab("⬇️ Export Results"):
+        export_input = gr.Dataframe(
+            headers=["Text", "Sentiment", "Confidence", "Keywords"],
+            label="Paste results here to export"
+        )
+ 
+        btn_export_csv = gr.DownloadButton(label="Download CSV", file_name="sentiments.csv")
+        btn_export_json = gr.DownloadButton(label="Download JSON", file_name="sentiments.json")
+ 
+        btn_export_csv.click(export_csv, export_input, btn_export_csv)
+        btn_export_json.click(export_json, export_input, btn_export_json)
+ 
+ 
+demo.launch()
