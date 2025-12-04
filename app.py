@@ -153,6 +153,36 @@ with gr.Blocks(title="📊 Sentiment Analysis Dashboard") as demo:
         btn_export_csv.click(export_csv, export_input, btn_export_csv)
         btn_export_json.click(export_json, export_input, btn_export_json)
 
+def sentiment_chart(data):
+    """
+    data: list of lists [[text, sentiment, confidence, keywords], ...]
+    Returns a Plotly figure for Gradio
+    """
+    if not data or len(data) == 0:
+        return px.pie(values=[1], names=["No data"], title="Sentiment Distribution")
+
+    # Extract sentiment (ignore emojis)
+    sentiments = []
+    for row in data:
+        s = row[1].split()[-1]  # "😊 POSITIVE" → "POSITIVE"
+        sentiments.append(s)
+
+    df = pd.DataFrame({"Sentiment": sentiments})
+    fig = px.pie(df, names="Sentiment", title="Sentiment Distribution")
+    return fig
+
+    with gr.Tab("📊 Charts"):
+    chart_input = gr.Dataframe(
+        headers=["Text", "Sentiment", "Confidence", "Keywords"],
+        label="Paste results here for charts"
+    )
+    chart_output = gr.Plot(label="Sentiment Chart")
+
+    btn_chart = gr.Button("Generate Chart")
+    btn_chart.click(sentiment_chart, chart_input, chart_output)
+
+
+
 # -----------------------------
 # Launch
 # -----------------------------
