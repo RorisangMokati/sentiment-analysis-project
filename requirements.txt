@@ -2,4 +2,7 @@ huggingface-hub
 gradio
 requests
 plotly
+transformers
+torch
+
 
