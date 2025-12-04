@@ -1,104 +1,86 @@
 import gradio as gr
 import requests
 import os
+import time
 
-# Get Hugging Face token from environment variable or use empty for public access
+# Configuration
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
-# NEW: Updated API URL format
-API_URL = "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english"
+# LIST OF WORKING MODELS (try in order)
+MODELS = [
+    {
+        "name": "distilbert-sst2",
+        "url": "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english",
+        "type": "sentiment"
+    },
+    {
+        "name": "bert-sentiment",
+        "url": "https://api-inference.huggingface.co/models/nlptown/bert-base-multilingual-uncased-sentiment",
+        "type": "stars"
+    },
+    {
+        "name": "twitter-roberta",
+        "url": "https://api-inference.huggingface.co/models/cardiffnlp/twitter-roberta-base-sentiment",
+        "type": "sentiment"
+    }
+]
 
-# Set headers - use token if available, otherwise public access
-headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
-
-def analyze_sentiment(text):
-    """Analyze sentiment using Hugging Face API"""
-    if not text or not text.strip():
-        return "Please enter text", "0%", "No input"
+def analyze_with_model(text, model_config):
+    """Try to analyze with a specific model"""
+    headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
     
     try:
-        # Make API request - NEW format
         response = requests.post(
-            API_URL,
+            model_config["url"],
             headers=headers,
-            json={
-                "inputs": text,
-                "parameters": {
-                    "wait_for_model": True,
-                    "use_cache": False
-                }
-            },
-            timeout=30
+            json={"inputs": text},
+            timeout=10
         )
         
         if response.status_code == 200:
             data = response.json()
-            
-            # Debug: Print raw response
-            print(f"API Response: {data}")
-            
-            # Process the response
-            if isinstance(data, list) and len(data) > 0:
-                predictions = data[0]
-                
-                # Find prediction with highest confidence
-                best_prediction = max(predictions, key=lambda x: x['score'])
-                
-                # Map labels to readable format
-                label_mapping = {
-                    "LABEL_0": "NEGATIVE",
-                    "LABEL_1": "POSITIVE",
-                    "LABEL_2": "NEUTRAL",
-                    "NEGATIVE": "NEGATIVE",
-                    "POSITIVE": "POSITIVE",
-                    "NEUTRAL": "NEUTRAL"
-                }
-                
-                sentiment = label_mapping.get(best_prediction['label'], best_prediction['label'])
-                confidence_score = best_prediction['score']
-                confidence = f"{confidence_score:.2%}"
-                
-                # Simple keyword extraction
-                words = text.lower().split()
-                common_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'i', 'you', 'he', 'she', 'it', 'we', 'they'}
-                important_words = [word for word in words if word not in common_words and len(word) > 2]
-                keywords = ", ".join(important_words[:5]) if important_words else "No significant keywords"
-                
-                return sentiment, confidence, keywords
-            
-            elif isinstance(data, dict) and 'error' in data:
-                # Model is loading
-                if 'loading' in data['error'].lower():
-                    return "Model is loading...", "Please wait 20-30 seconds", "Refresh and try again"
-                else:
-                    return f"API Error", "0%", data['error'][:100]
-            else:
-                return "Unexpected response", "0%", str(data)[:100]
-        
-        elif response.status_code == 503:
-            # Model is loading
-            return "Model is loading...", "Please wait 20-30 seconds", "Refresh the page"
-        
-        elif response.status_code == 410:
-            # Use alternative model
-            return "Trying alternative model...", "0%", "Please wait"
-        
+            return True, data
         else:
-            # Try with ALTERNATIVE MODEL
-            alt_response = requests.post(
-                "https://api-inference.huggingface.co/models/nlptown/bert-base-multilingual-uncased-sentiment",
-                headers=headers,
-                json={"inputs": text},
-                timeout=30
-            )
-            
-            if alt_response.status_code == 200:
-                alt_data = alt_response.json()
-                if isinstance(alt_data, list) and len(alt_data) > 0:
-                    predictions = alt_data[0]
+            return False, f"Status {response.status_code}"
+    except Exception as e:
+        return False, str(e)
+
+def analyze_sentiment(text):
+    """Main sentiment analysis function with multiple fallbacks"""
+    if not text or not text.strip():
+        return "Please enter text", "0%", "No input"
+    
+    # Try each model in order
+    for i, model in enumerate(MODELS):
+        if i > 0:
+            time.sleep(0.5)  # Small delay between tries
+        
+        success, result = analyze_with_model(text, model)
+        
+        if success:
+            # Process based on model type
+            if model["type"] == "sentiment":
+                if isinstance(result, list) and len(result) > 0:
+                    predictions = result[0]
                     best = max(predictions, key=lambda x: x['score'])
                     
-                    # Map star ratings to sentiment
+                    # Map labels
+                    label = best['label'].upper()
+                    if "POSITIVE" in label or "LABEL_1" in label:
+                        sentiment = "POSITIVE"
+                    elif "NEGATIVE" in label or "LABEL_0" in label:
+                        sentiment = "NEGATIVE"
+                    else:
+                        sentiment = "NEUTRAL"
+                    
+                    confidence = f"{best['score']:.2%}"
+                    
+            elif model["type"] == "stars":
+                if isinstance(result, list) and len(result) > 0:
+                    predictions = result[0]
+                    best = max(predictions, key=lambda x: x['score'])
+                    
+                    # Map star ratings
                     label = best['label']
                     if '1 star' in label or '2 stars' in label:
                         sentiment = "NEGATIVE"
@@ -108,22 +90,49 @@ def analyze_sentiment(text):
                         sentiment = "NEUTRAL"
                     
                     confidence = f"{best['score']:.2%}"
-                    
-                    # Keywords
-                    words = text.lower().split()
-                    common = {'the', 'a', 'an', 'and', 'or', 'but', 'in'}
-                    keywords = [w for w in words if w not in common and len(w) > 2][:3]
-                    
-                    return f"{sentiment} (Alt model)", confidence, ", ".join(keywords) if keywords else "None"
             
-            return f"Error {response.status_code}", "0%", response.text[:100]
+            # Extract keywords
+            words = text.lower().split()
+            common = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of'}
+            keywords = [w for w in words if w not in common and len(w) > 2][:3]
             
-    except requests.exceptions.Timeout:
-        return "Request timeout", "0%", "API took too long to respond"
-    except requests.exceptions.RequestException as e:
-        return "Connection Error", "0%", f"Check connection: {str(e)[:50]}"
-    except Exception as e:
-        return "Processing Error", "0%", f"Error: {str(e)[:50]}"
+            return sentiment, confidence, ", ".join(keywords) if keywords else "None"
+    
+    # If all models fail, use RULE-BASED fallback
+    return analyze_with_rules(text)
+
+def analyze_with_rules(text):
+    """Rule-based sentiment analysis as final fallback"""
+    text_lower = text.lower()
+    
+    # Positive words
+    positive_words = ['love', 'like', 'good', 'great', 'excellent', 'fantastic', 'awesome', 'best', 'happy', 'perfect', 'wonderful']
+    # Negative words
+    negative_words = ['hate', 'bad', 'terrible', 'awful', 'worst', 'poor', 'disappointed', 'regret', 'sorry', 'unhappy']
+    
+    pos_count = sum(1 for word in positive_words if word in text_lower)
+    neg_count = sum(1 for word in negative_words if word in text_lower)
+    
+    if pos_count > neg_count:
+        sentiment = "POSITIVE"
+        confidence = f"{(70 + min(pos_count * 10, 25)):.0f}%"
+    elif neg_count > pos_count:
+        sentiment = "NEGATIVE"
+        confidence = f"{(70 + min(neg_count * 10, 25)):.0f}%"
+    else:
+        sentiment = "NEUTRAL"
+        confidence = "65%"
+    
+    # Extract actual words found
+    found_words = []
+    all_keywords = positive_words + negative_words
+    for word in all_keywords:
+        if word in text_lower:
+            found_words.append(word)
+    
+    keywords = ", ".join(found_words[:3]) if found_words else "No keywords detected"
+    
+    return f"{sentiment} (Rule-based)", confidence, keywords
 
 # Create the Gradio interface
 with gr.Blocks(title="Sentiment Analysis Dashboard") as demo:
@@ -138,8 +147,9 @@ with gr.Blocks(title="Sentiment Analysis Dashboard") as demo:
             # Input section
             text_input = gr.Textbox(
                 label="Enter Text",
-                placeholder="Type or paste your text here...\nExample: 'I love donuts! They make my mornings better.'",
-                lines=3
+                placeholder="Type or paste your text here...",
+                lines=3,
+                value="I love this! Fantastic experience."
             )
             
             # Buttons
@@ -158,10 +168,29 @@ with gr.Blocks(title="Sentiment Analysis Dashboard") as demo:
     
     # Results section
     gr.Markdown("## 📈 Results")
+    
     with gr.Row():
-        sentiment_output = gr.Textbox(label="Sentiment")
-        confidence_output = gr.Textbox(label="Confidence")
-        keywords_output = gr.Textbox(label="Keywords")
+        sentiment_output = gr.Textbox(
+            label="Sentiment",
+            value="Click 'Analyze' to see results"
+        )
+    
+    with gr.Row():
+        confidence_output = gr.Textbox(
+            label="Confidence",
+            value=""
+        )
+        keywords_output = gr.Textbox(
+            label="Keywords", 
+            value=""
+        )
+    
+    # Status indicator
+    status = gr.Textbox(
+        label="Status",
+        value="Ready",
+        interactive=False
+    )
     
     # Examples section
     gr.Markdown("## 🎯 Examples")
@@ -169,7 +198,9 @@ with gr.Blocks(title="Sentiment Analysis Dashboard") as demo:
         examples=[
             ["I love this! Fantastic experience."],
             ["Terrible product, I regret buying it."],
-            ["It was okay, nothing special."]
+            ["It was okay, nothing special."],
+            ["The service was excellent and fast!"],
+            ["Worst customer experience ever."]
         ],
         inputs=text_input,
         label="Click to test:"
@@ -180,15 +211,22 @@ with gr.Blocks(title="Sentiment Analysis Dashboard") as demo:
     gr.Markdown("<div style='text-align: center'><small>🚀 AI in Action Project | Built with Gradio & Hugging Face</small></div>")
     
     # Event handlers
+    def process_with_status(text):
+        """Process with status updates"""
+        status.update(value="🔄 Analyzing...")
+        sentiment, confidence, keywords = analyze_sentiment(text)
+        status.update(value="✅ Analysis complete!")
+        return sentiment, confidence, keywords
+    
     submit_btn.click(
-        fn=analyze_sentiment,
+        fn=process_with_status,
         inputs=text_input,
         outputs=[sentiment_output, confidence_output, keywords_output]
     )
     
     clear_btn.click(
-        fn=lambda: ("", "", "", ""),
-        outputs=[text_input, sentiment_output, confidence_output, keywords_output]
+        fn=lambda: ("", "Click 'Analyze' to see results", "", "", "Ready"),
+        outputs=[text_input, sentiment_output, confidence_output, keywords_output, status]
     )
 
 # Launch the app
