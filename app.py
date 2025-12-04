@@ -1,139 +1,81 @@
 import gradio as gr
-import requests
-import os
-import time
-
-# === CONFIG ============================================================
-HF_TOKEN = os.environ.get("HF_TOKEN", "")
-
-MODELS = [
-    {"name": "distilbert-sst2",
-     "url": "https://api-inference.huggingface.co/models/distilbert-base-uncased-finetuned-sst-2-english",
-     "type": "sentiment"},
-
-    {"name": "bert-stars",
-     "url": "https://api-inference.huggingface.co/models/nlptown/bert-base-multilingual-uncased-sentiment",
-     "type": "stars"},
-
-    {"name": "twitter-roberta",
-     "url": "https://api-inference.huggingface.co/models/cardiffnlp/twitter-roberta-base-sentiment",
-     "type": "sentiment"},
-]
-
-# ======================================================================
-
-def call_model(text, model):
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"} if HF_TOKEN else {}
-    try:
-        r = requests.post(model["url"], headers=headers, json={"inputs": text}, timeout=10)
-        if r.status_code == 200:
-            return True, r.json()
-        return False, f"HTTP {r.status_code}"
-    except Exception as e:
-        return False, f"ERR {str(e)}"
-
+import csv
+import json
+import pandas as pd
+from io import StringIO
+ 
+# -----------------------------
+# SENTIMENT FUNCTION
+# -----------------------------
 def analyze_sentiment(text):
-    if not text.strip():
-        return "Enter text first", "0%", "No input"
-
-    # === Try each model until one works ================================
-    for i, model in enumerate(MODELS):
-        if i > 0: time.sleep(0.4)
-        ok, result = call_model(text, model)
-        if ok:
-            try:
-                data = result[0]
-                best = max(data, key=lambda x: x["score"])
-                label = best["label"].upper()
-
-                # SENTIMENT MAPPING
-                if model["type"] == "sentiment":
-                    sentiment = "POSITIVE" if "POS" in label or "LABEL_1" in label else \
-                                "NEGATIVE" if "NEG" in label or "LABEL_0" in label else "NEUTRAL"
-                else:  # star rating model
-                    sentiment = "POSITIVE" if "4" in label or "5" in label else \
-                                "NEGATIVE" if "1" in label or "2" in label else "NEUTRAL"
-
-                confidence = f"{best['score']:.2%}"
-
-                # keyword extraction
-                words = [w for w in text.lower().split() if len(w) > 2][:5]
-                keywords = ", ".join(words) if words else "None"
-
-                return sentiment, confidence, keywords
-
-            except:
-                continue
-
-    return rule_based(text)
-
-
-# === RULE FALLBACK if HF down =========================================
-def rule_based(text):
-    text = text.lower()
-    pos_words = ['love','good','great','awesome','excellent','best','happy']
-    neg_words = ['bad','hate','terrible','worst','awful','sad','angry']
-
-    pos = sum(w in text for w in pos_words)
-    neg = sum(w in text for w in neg_words)
-
-    if pos > neg: return "POSITIVE (Rule)", "70%", ", ".join(pos_words[:3])
-    if neg > pos: return "NEGATIVE (Rule)", "70%", ", ".join(neg_words[:3])
-    return "NEUTRAL (Rule)", "60%", "No strong keywords"
-
-
-# ======================================================================
-# ============================ UI ======================================
-# ======================================================================
-
-with gr.Blocks(title="Sentiment Analysis Dashboard") as demo:
-
-    gr.Markdown("# 📊 Sentiment Analysis Dashboard")
-    gr.Markdown("Analyze emotional tone using AI with **multi-model fallback & offline rules**.")
-
-    with gr.Row():
-        with gr.Column(scale=2):
-
-            text_input = gr.Textbox(
-                label="Enter Text",
-                placeholder="Type something like: I love donuts 😋",
-                lines=4
-            )
-
-            with gr.Row():
-                clear = gr.Button("🧹 Clear", variant="secondary")
-                analyze = gr.Button("🚀 Analyze Sentiment", variant="primary")
-
-        with gr.Column(scale=1):
-            gr.Markdown("### ℹ How it Works")
-            gr.Markdown("""
-            • AI sentiment classification  
-            • Multi-model fallback for reliability  
-            • If API fails → rule-based sentiment kicks in  
-            """)
-
-    gr.Markdown("## 📈 Analysis Results")
-
-    with gr.Row():
-        sentiment = gr.Textbox(label="Sentiment", interactive=False)
-        confidence = gr.Textbox(label="Confidence", interactive=False)
-        keywords = gr.Textbox(label="Keywords", interactive=False)
-
-    gr.Markdown("## 🎯 Try Examples")
-    gr.Examples(
-        [["I love this app, fantastic work!"]],
-        [["Feeling sleepy 😴"]],
-        [["Terrible product, waste of money."]],
-        [["It was okay, nothing special really."]],
-        [["Amazing service and support!"]],
-        inputs=text_input
-    )
-
-    # Button events
-    analyze.click(analyze_sentiment, text_input, [sentiment, confidence, keywords])
-    clear.click(lambda:"", None, text_input)
-
-
-# RUN APP
-if __name__ == "__main__":
-    demo.launch(debug=True, share=False)
+    """Simple sentiment logic."""
+    if not text or text.strip() == "":
+        return "Enter text first", "0%", "No text"
+ 
+    text_lower = text.lower()
+ 
+    positive_words = ["love", "fantastic", "excellent"]
+    negative_words = ["hate", "terrible", "worst"]
+    neutral_words  = ["okay", "fine", "average"]
+ 
+    matched = [w for w in positive_words + negative_words + neutral_words if w in text_lower]
+ 
+    if any(w in text_lower for w in positive_words):
+        return "😊 POSITIVE", "94%", ", ".join(matched)
+    elif any(w in text_lower for w in negative_words):
+        return "😠 NEGATIVE", "89%", ", ".join(matched)
+    elif any(w in text_lower for w in neutral_words):
+        return "😐 NEUTRAL", "76%", ", ".join(matched)
+ 
+    if len(text.split()) > 5:
+        return "🤔 NEUTRAL", "68%", "multiple words detected"
+    else:
+        return "😐 NEUTRAL", "72%", "short text"
+ 
+ 
+# -----------------------------
+# BATCH PROCESSING
+# -----------------------------
+def analyze_batch(input_text):
+    if not input_text or input_text.strip() == "":
+        return []
+ 
+    lines = [l.strip() for l in input_text.split("\n") if l.strip()]
+    results = []
+ 
+    for line in lines:
+        sentiment, confidence, keywords = analyze_sentiment(line)
+        results.append([line, sentiment, confidence, keywords])
+ 
+    return results
+ 
+ 
+# -----------------------------
+# FILE UPLOAD PROCESSING
+# -----------------------------
+def process_file(file):
+    if file is None:
+        return []
+ 
+    # Detect file type
+    if file.name.endswith(".txt"):
+        content = file.read().decode("utf-8")
+        lines = content.split("\n")
+ 
+    elif file.name.endswith(".csv"):
+        df = pd.read_csv(file.name)
+        if df.shape[1] == 0:
+            return []
+        lines = df.iloc[:, 0].astype(str).tolist()
+ 
+    else:
+        return []
+ 
+    results = []
+    for line in lines:
+        line = line.strip()
+        if line:
+            sentiment, confidence, keywords = analyze_sentiment(line)
+            results.append([line, sentiment, confidence, keywords])
+ 
+    return resul
