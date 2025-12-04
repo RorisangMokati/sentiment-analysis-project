@@ -1,42 +1,90 @@
 import gradio as gr
-
+ 
+# -----------------------------
+# IMPROVED SENTIMENT FUNCTION
+# -----------------------------
 def analyze_sentiment(text):
-    """Super simple sentiment analysis - ALWAYS WORKS"""
+    """Simple sentiment analysis with improved logic."""
+ 
     if not text or text.strip() == "":
         return "Enter text first", "0%", "No text"
-    
+ 
     text_lower = text.lower()
-    
-    # Simple logic - NO ERRORS POSSIBLE
-    if "love" in text_lower or "fantastic" in text_lower or "excellent" in text_lower:
-        return "😊 POSITIVE", "94%", "love, fantastic, excellent"
-    elif "hate" in text_lower or "terrible" in text_lower or "worst" in text_lower:
-        return "😠 NEGATIVE", "89%", "hate, terrible, worst"
-    elif "okay" in text_lower or "fine" in text_lower or "average" in text_lower:
-        return "😐 NEUTRAL", "76%", "okay, fine, average"
+ 
+    positive_words = ["love", "fantastic", "excellent"]
+    negative_words = ["hate", "terrible", "worst"]
+    neutral_words = ["okay", "fine", "average"]
+ 
+    # Detect keywords
+    matched = [w for w in positive_words + negative_words + neutral_words if w in text_lower]
+ 
+    # Sentiment rules
+    if any(w in text_lower for w in positive_words):
+        return "😊 POSITIVE", "94%", ", ".join(matched)
+    elif any(w in text_lower for w in negative_words):
+        return "😠 NEGATIVE", "89%", ", ".join(matched)
+    elif any(w in text_lower for w in neutral_words):
+        return "😐 NEUTRAL", "76%", ", ".join(matched)
+ 
+    # Default cases
+    if len(text.split()) > 5:
+        return "🤔 NEUTRAL", "68%", "multiple words detected"
     else:
-        # Default for any other text
-        if len(text.split()) > 5:
-            return "🤔 NEUTRAL", "68%", "multiple words detected"
-        else:
-            return "😐 NEUTRAL", "72%", "short text"
-
-# SIMPLE INTERFACE - NO ERRORS
-demo = gr.Interface(
-    fn=analyze_sentiment,
-    inputs=gr.Textbox(label="Enter Text", placeholder="I love this! Fantastic experience.", lines=3),
-    outputs=[
-        gr.Textbox(label="Sentiment"),
-        gr.Textbox(label="Confidence"),
-        gr.Textbox(label="Keywords")
-    ],
-    title="📊 Sentiment Analysis Dashboard",
-    description="Analyze emotional tone using AI sentiment classification.",
-    examples=[
-        ["I love this! Fantastic experience."],
-        ["Terrible product, I regret buying it."],
-        ["It was okay, nothing special."]
-    ]
-)
-
+        return "😐 NEUTRAL", "72%", "short text"
+ 
+ 
+# -----------------------------
+# BATCH PROCESSING FUNCTION
+# -----------------------------
+def analyze_batch(input_text):
+    """
+    Takes multiple lines, each line is one text entry.
+    Returns table-like results.
+    """
+    if not input_text or input_text.strip() == "":
+        return []
+ 
+    lines = [l.strip() for l in input_text.split("\n") if l.strip() != ""]
+ 
+    results = []
+    for line in lines:
+        sentiment, confidence, keywords = analyze_sentiment(line)
+        results.append([line, sentiment, confidence, keywords])
+ 
+    return results
+ 
+ 
+# -----------------------------
+# GRADIO INTERFACE
+# -----------------------------
+with gr.Blocks(title="📊 Sentiment Analysis Dashboard") as demo:
+ 
+    gr.Markdown("# 📊 Sentiment Analysis Dashboard")
+    gr.Markdown("Analyze emotional tone — supports **single text** or **batch processing**.")
+ 
+    with gr.Tab("Single Text"):
+        input_single = gr.Textbox(label="Enter Text", lines=3)
+        btn_single = gr.Button("Analyze")
+ 
+        output_sentiment = gr.Textbox(label="Sentiment")
+        output_confidence = gr.Textbox(label="Confidence")
+        output_keywords = gr.Textbox(label="Keywords")
+ 
+        btn_single.click(analyze_sentiment, input_single,
+                        [output_sentiment, output_confidence, output_keywords])
+ 
+    with gr.Tab("Batch Processing"):
+        batch_input = gr.Textbox(
+            label="Enter one sentence per line",
+            placeholder="I love this!\nTerrible product.\nIt was fine.",
+            lines=6
+        )
+        btn_batch = gr.Button("Analyze Batch")
+        batch_output = gr.Dataframe(
+            headers=["Text", "Sentiment", "Confidence", "Keywords"],
+            label="Batch Results"
+        )
+ 
+        btn_batch.click(analyze_batch, batch_input, batch_output)
+ 
 demo.launch()
