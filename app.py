@@ -111,8 +111,8 @@ custom_css = """
 }
 """
 
-# Create Gradio interface
-with gr.Blocks(title="Sentiment Analysis Dashboard", theme=gr.themes.Soft(), css=custom_css) as demo:
+# Create Gradio interface - REMOVED THEME PARAMETER
+with gr.Blocks(title="Sentiment Analysis Dashboard", css=custom_css) as demo:
     
     # Header
     gr.Markdown("# 📊 Sentiment Analysis Dashboard")
