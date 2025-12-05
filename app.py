@@ -8,7 +8,6 @@ import random
 # -----------------------------
 # HUGGING FACE SENTIMENT PIPELINE
 # -----------------------------
-# Using a model that supports POSITIVE / NEGATIVE / NEUTRAL
 sentiment_model = pipeline(
     "sentiment-analysis",
     model="cardiffnlp/twitter-roberta-base-sentiment"
@@ -24,18 +23,14 @@ def analyze_sentiment(text):
     """Analyze sentiment with Hugging Face and return label, confidence, keywords"""
     if not text or text.strip() == "":
         return "Enter text first", "0%", "No text"
-    
-    # Handle numeric or meaningless input
-    if text.replace(".", "").replace(",", "").isdigit():
-        return "😐 NEUTRAL", "50%", "No keywords"
 
     try:
-        result = sentiment_model(text)[0]  # {'label': 'LABEL_2', 'score': 0.99}
+        result = sentiment_model(text)[0]
         label = label_map.get(result["label"], "NEUTRAL")
         score = result["score"]
 
-        # Add random variation to make confidence more realistic
-        variation = random.uniform(-0.3, 0.0)  # reduce 0–30%
+        # Human-like confidence: add small random jitter ±7%
+        variation = random.uniform(-0.07, 0.07)
         adjusted_score = max(0, min(1, score + variation))
         confidence = f"{adjusted_score*100:.0f}%"
 
@@ -76,16 +71,24 @@ def analyze_batch(input_text):
 def process_file(file):
     if file is None:
         return []
-    # TXT files
-    if file.name.endswith(".txt"):
-        content = file.read().decode("utf-8")
-        lines = [l.strip() for l in content.split("\n") if l.strip()]
-    # CSV files
-    elif file.name.endswith(".csv"):
-        df = pd.read_csv(file)
-        lines = df.iloc[:, 0].astype(str).tolist()
-    else:
-        return []
+
+    lines = []
+    try:
+        if file.name.endswith(".txt"):
+            content = file.read().decode("utf-8")
+            lines = [l.strip() for l in content.split("\n") if l.strip()]
+        elif file.name.endswith(".csv"):
+            df = pd.read_csv(file)
+            # Use 'Text' column if it exists; otherwise, take first column
+            if 'Text' in df.columns:
+                lines = df['Text'].astype(str).tolist()
+            else:
+                lines = df.iloc[:, 0].astype(str).tolist()
+        else:
+            return []
+    except Exception as e:
+        return [[str(e), "Error", "0%", str(e)]]
+
     results = []
     for line in lines:
         sentiment, confidence, keywords = analyze_sentiment(line)
