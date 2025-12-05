@@ -1,5 +1,3 @@
-markdown
----
 title: Sentiment Dashboard
 emoji: 📊
 colorFrom: red
