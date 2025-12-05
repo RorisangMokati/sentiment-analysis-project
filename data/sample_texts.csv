@@ -1,0 +1,55 @@
+ID,Text,Manual_Sentiment
+1,I absolutely love the new design of the website!,Positive
+2,"The delivery took too long, very frustrating experience",Negative
+3,"Not bad, but could be better",Neutral
+4,"Amazing customer service, very helpful staff",Positive
+5,I'm disappointed with the quality of the product.,Negative
+6,I'm thrilled with how fast my order arrived!,Positive
+7,"The app crashes sometimes, but overall it's okay.",Neutral
+8,"It's an average experience, nothing special.",Neutral
+9,I'm not impressed with the new features.,Negative
+10,Terrible! I will never buy from here again.,Negative
+11,Fantastic! Everything worked perfectly.,Positive
+13,The tutorial was easy to follow and very informative.,Positive
+14,"Mediocre service, expected more.",Neutral
+15,"Neutral feelings, it's neither good nor bad.",Neutral
+16,"I feel happy using this platform, very intuitive.",Positive
+17,"Excellent support, quick responses to my questions.",Positive
+18,"The product broke within a week, very upset.",Negative
+19,"I dislike the recent update, it's confusing.",Negative
+20,I love the colors and layout of the app.,Positive
+21,"Pretty satisfied, meets my expectations.",Positive
+22,Customer support did not answer my question.,Negative
+23,"The packaging was damaged, but the product is fine.",Neutral
+24,I'm frustrated with constant login issues.,Negative
+25,"I hate the new interface, very hard to navigate.",Negative
+26,The checkout process was smooth and easy.,Positive
+27,"Product quality is outstanding, highly recommend.",Positive
+28,"It was okay, nothing really stood out.",Neutral
+29,"The tutorial helped me a lot, very clear.",Positive
+30,"Not satisfied, the features are limited.",Negative
+31,I'm unhappy with how long it took to ship.,Negative
+32,Very happy with the quick response from support.,Positive
+33,"Amazing experience, will come back for sure!",Positive
+34,The update improved the app significantly.,Positive
+35,Disappointed that my order arrived late.,Negative
+36,"Satisfied overall, meets my expectations.",Positive
+37,"Great value for the price, very pleased.",Positive
+38,"The service is excellent, highly recommend.",Positive
+39,"The design is confusing, hard to find options.",Negative
+40,I'm upset about the missing items in my order.,Negative
+41,"Terrible customer service experience, not helpful.",Negative
+42,"Good performance, but could use more features.",Neutral
+43,"I enjoyed using the app, very intuitive.",Positive
+44,The interface is sleek and user-friendly.,Positive
+45,Not sure how I feel about the changes.,Neutral
+46,"I like the product, works as described.",Positive
+47,"Exceeded my expectations, very impressed!",Positive
+48,The app is slow and crashes frequently.,Negative
+49,The instructions were confusing and unclear.,Negative
+50,"The website loads fast, smooth experience.",Positive
+51,Very dissatisfied with the delivery delays.,Negative
+52,"I love the new features, very useful.",Positive
+53,"I'm neutral about the new update, no strong opinion.",Neutral
+54,Poor packaging caused minor damages.,Negative
+55,"Amazing support team, very responsive.",Positive
