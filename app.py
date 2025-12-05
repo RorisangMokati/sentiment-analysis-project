@@ -10,41 +10,36 @@ import time
 from datetime import datetime
 import re
 from collections import Counter
-import numpy as np
 
 # ==================== CONFIGURATION ====================
-THEME = gr.themes.Soft(
-    primary_hue="blue",
-    secondary_hue="orange",
-    radius_size="lg"
-)
-
+# Remove theme if it causes issues
 CSS = """
 .gradio-container {max-width: 1200px !important;}
 .header-title {font-size: 2.5rem !important; font-weight: 800 !important;}
-.metric-card {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; 
-              color: white !important; border-radius: 12px !important; padding: 20px !important;}
-.btn-primary {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; border: none !important;}
+.btn-primary {background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important; border: none !important; color: white !important;}
 .sentiment-positive {color: #10b981 !important; font-weight: 600;}
 .sentiment-negative {color: #ef4444 !important; font-weight: 600;}
 .sentiment-neutral {color: #64748b !important; font-weight: 600;}
+.metric-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    margin: 5px;
+}
 """
 
 # ==================== SENTIMENT MODEL ====================
-@gr.cache_resource
-def load_sentiment_model():
-    """Load sentiment model with caching"""
-    print("🔄 Loading sentiment model...")
-    model = pipeline(
-        "sentiment-analysis",
-        model="cardiffnlp/twitter-roberta-base-sentiment",
-        truncation=True,
-        max_length=512
-    )
-    print("✅ Model loaded successfully!")
-    return model
-
-sentiment_model = load_sentiment_model()
+# Simple model loading without cache_resource
+print("🔄 Loading sentiment model...")
+sentiment_model = pipeline(
+    "sentiment-analysis",
+    model="cardiffnlp/twitter-roberta-base-sentiment",
+    truncation=True,
+    max_length=512
+)
+print("✅ Model loaded successfully!")
 
 # Map labels to readable sentiment with emojis and colors
 SENTIMENT_MAP = {
@@ -66,7 +61,7 @@ def analyze_sentiment(text, add_variation=True):
         return "📝 Enter text first", "0%", "No text"
 
     try:
-        result = sentiment_model(text)[0]
+        result = sentiment_model(text[:512])[0]  # Limit to 512 chars
         label_data = SENTIMENT_MAP.get(result["label"], SENTIMENT_MAP["LABEL_1"])
         score = result["score"]
 
@@ -81,21 +76,24 @@ def analyze_sentiment(text, add_variation=True):
         
         # Format confidence with color based on level
         if confidence_percent >= 80:
-            confidence_html = f"<span style='color:#10b981; font-weight:600;'>{confidence_percent:.1f}%</span>"
+            confidence = f"{confidence_percent:.1f}%"
+            confidence_class = "sentiment-positive"
         elif confidence_percent >= 60:
-            confidence_html = f"<span style='color:#f59e0b; font-weight:600;'>{confidence_percent:.1f}%</span>"
+            confidence = f"{confidence_percent:.1f}%"
+            confidence_class = "sentiment-neutral"
         else:
-            confidence_html = f"<span style='color:#ef4444; font-weight:600;'>{confidence_percent:.1f}%</span>"
+            confidence = f"{confidence_percent:.1f}%"
+            confidence_class = "sentiment-negative"
         
         sentiment = f"{label_data['emoji']} {label_data['label']}"
         
         # Enhanced keyword extraction
         keywords = extract_enhanced_keywords(text)
         
-        return sentiment, confidence_html, keywords
+        return sentiment, confidence, keywords, confidence_class
 
     except Exception as e:
-        return "⚠️ Error", "0%", f"Processing error: {str(e)[:50]}"
+        return "⚠️ Error", "0%", f"Error: {str(e)[:50]}", "sentiment-negative"
 
 def extract_enhanced_keywords(text, max_keywords=3):
     """Smart keyword extraction with frequency analysis"""
@@ -135,16 +133,16 @@ def get_text_stats(text):
     }
 
 # ==================== ENHANCED BATCH PROCESSING ====================
-def analyze_batch_enhanced(input_text, progress=gr.Progress()):
-    """Enhanced batch processing with progress indicator"""
+def analyze_batch_enhanced(input_text):
+    """Enhanced batch processing"""
     if not input_text or input_text.strip() == "":
         return []
     
     lines = [line.strip() for line in input_text.split("\n") if line.strip()]
     results = []
     
-    for i, line in enumerate(progress.tqdm(lines, desc="Analyzing texts")):
-        sentiment, confidence, keywords = analyze_sentiment(line, add_variation=False)
+    for line in lines:
+        sentiment, confidence, keywords, _ = analyze_sentiment(line, add_variation=False)
         
         # Truncate long text for display
         display_text = line[:80] + "..." if len(line) > 80 else line
@@ -153,7 +151,7 @@ def analyze_batch_enhanced(input_text, progress=gr.Progress()):
     
     return results
 
-def process_file_enhanced(file, progress=gr.Progress()):
+def process_file_enhanced(file):
     """Enhanced file processing with better error handling"""
     if file is None:
         return [], "⚠️ No file uploaded", pd.DataFrame()
@@ -176,37 +174,42 @@ def process_file_enhanced(file, progress=gr.Progress()):
                 lines = df.iloc[:, 0].astype(str).tolist()
         
         else:
-            return [], f"❌ Unsupported file type: {filename.split('.')[-1]}", pd.DataFrame()
+            return [], f"❌ Unsupported file type", pd.DataFrame()
         
         # Process each line
         results = []
-        for i, line in enumerate(progress.tqdm(lines, desc=f"Processing {filename}")):
-            sentiment, confidence, keywords = analyze_sentiment(line, add_variation=False)
+        for line in lines:
+            sentiment, confidence, keywords, _ = analyze_sentiment(line, add_variation=False)
             results.append([line[:80] + "..." if len(line) > 80 else line, sentiment, confidence, keywords])
         
         # Create summary
         df_results = pd.DataFrame(results, columns=["Text", "Sentiment", "Confidence", "Keywords"])
         summary = generate_summary(df_results)
         
-        return results, f"✅ Processed {len(lines)} lines from {filename}", df_results
+        return results, f"✅ Processed {len(lines)} lines", df_results
     
     except Exception as e:
-        return [], f"❌ Error processing file: {str(e)}", pd.DataFrame()
+        return [], f"❌ Error: {str(e)}", pd.DataFrame()
 
 def generate_summary(df):
     """Generate markdown summary of batch results"""
     if df.empty:
-        return "## 📊 No data available for summary"
+        return "## 📊 No data available"
     
     # Count sentiments
     sentiments = df["Sentiment"].apply(lambda x: x.split()[1] if len(x.split()) > 1 else x)
     sentiment_counts = sentiments.value_counts()
     
     # Calculate average confidence
-    conf_values = df["Confidence"].apply(
-        lambda x: float(re.search(r'\d+\.?\d*', x).group()) if re.search(r'\d+\.?\d*', x) else 0
-    )
-    avg_confidence = conf_values.mean()
+    conf_values = []
+    for conf in df["Confidence"]:
+        try:
+            val = float(conf.replace('%', ''))
+            conf_values.append(val)
+        except:
+            pass
+    
+    avg_confidence = sum(conf_values)/len(conf_values) if conf_values else 0
     
     summary = f"""
     ## 📊 Batch Analysis Summary
@@ -214,18 +217,19 @@ def generate_summary(df):
     **Total Texts Analyzed:** {len(df)}
     
     **Sentiment Distribution:**
-    {chr(10).join([f'- **{sent}**: {count} ({count/len(df)*100:.1f}%)' for sent, count in sentiment_counts.items()])}
-    
-    **Average Confidence:** {avg_confidence:.1f}%
-    
-    **Processing Time:** ~{len(df)*0.3:.1f}s estimated
     """
+    
+    for sent, count in sentiment_counts.items():
+        percentage = count/len(df)*100
+        summary += f"\n- **{sent}**: {count} ({percentage:.1f}%)"
+    
+    summary += f"\n\n**Average Confidence:** {avg_confidence:.1f}%"
     
     return summary
 
 # ==================== ENHANCED VISUALIZATIONS ====================
 def create_sentiment_chart_enhanced(data):
-    """Create enhanced sentiment visualization with multiple chart types"""
+    """Create enhanced sentiment visualization"""
     if data is None or len(data) == 0:
         fig = go.Figure()
         fig.add_annotation(text="No data available", x=0.5, y=0.5, showarrow=False)
@@ -246,23 +250,18 @@ def create_sentiment_chart_enhanced(data):
     # Count sentiments
     sentiment_counts = df['Label'].value_counts()
     
-    # Create donut chart
+    # Create pie chart
     fig = go.Figure(data=[go.Pie(
         labels=sentiment_counts.index,
         values=sentiment_counts.values,
-        hole=0.4,
         marker=dict(colors=['#ef4444', '#64748b', '#10b981']),
         textinfo='percent+label',
-        textposition='inside',
         hoverinfo='label+percent+value'
     )])
     
     fig.update_layout(
-        title=dict(text="📈 Sentiment Distribution", font=dict(size=20)),
-        height=400,
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
-        annotations=[dict(text=f"Total: {len(df)}", x=0.5, y=0.5, font_size=16, showarrow=False)]
+        title="📈 Sentiment Distribution",
+        height=400
     )
     
     return fig
@@ -279,9 +278,16 @@ def create_confidence_chart(data):
         df = pd.DataFrame(data, columns=["Text", "Sentiment", "Confidence", "Keywords"])
     
     # Extract confidence values
-    conf_values = df["Confidence"].apply(
-        lambda x: float(re.search(r'\d+\.?\d*', x).group()) if re.search(r'\d+\.?\d*', x) else 0
-    )
+    conf_values = []
+    for conf in df["Confidence"]:
+        try:
+            val = float(conf.replace('%', ''))
+            conf_values.append(val)
+        except:
+            pass
+    
+    if not conf_values:
+        return go.Figure()
     
     fig = go.Figure(data=[go.Histogram(
         x=conf_values,
@@ -292,22 +298,15 @@ def create_confidence_chart(data):
     )])
     
     fig.update_layout(
-        title=dict(text="📊 Confidence Score Distribution", font=dict(size=20)),
+        title="📊 Confidence Distribution",
         xaxis_title="Confidence (%)",
         yaxis_title="Frequency",
-        height=350,
-        bargap=0.1,
-        plot_bgcolor='white'
+        height=350
     )
-    
-    # Add average line
-    avg_conf = conf_values.mean()
-    fig.add_vline(x=avg_conf, line_dash="dash", line_color="red", 
-                  annotation_text=f"Average: {avg_conf:.1f}%")
     
     return fig
 
-# ==================== ENHANCED EXPORT FUNCTIONS ====================
+# ==================== EXPORT FUNCTIONS ====================
 def export_results_enhanced(data, format="csv"):
     """Export results in multiple formats"""
     if data is None or len(data) == 0:
@@ -332,45 +331,38 @@ def export_results_enhanced(data, format="csv"):
         json_string = json.dumps(json_data, indent=2)
         return gr.File(value=json_string, label=filename)
     
-    elif format == "excel":
-        filename = f"sentiment_analysis_{timestamp}.xlsx"
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            df.to_excel(tmp.name, index=False)
-            return gr.File(value=tmp.name, label=filename)
-    
     return None
 
 # ==================== METRIC CARD COMPONENT ====================
 def create_metric_card(title, value, description=""):
     """Create a modern metric card"""
-    html = f"""
-    <div class="metric-card" style="text-align: center;">
+    return gr.HTML(f"""
+    <div class="metric-card">
         <div style="font-size: 0.9rem; opacity: 0.9;">{title}</div>
         <div style="font-size: 2rem; font-weight: 700; margin: 10px 0;">{value}</div>
         <div style="font-size: 0.8rem; opacity: 0.7;">{description}</div>
     </div>
-    """
-    return gr.HTML(html)
+    """)
 
-# ==================== MODERN UI ====================
-with gr.Blocks(title="Sentiment Analysis Pro", theme=THEME, css=CSS) as demo:
+# ==================== MAIN UI ====================
+with gr.Blocks(title="Sentiment Analysis Pro", css=CSS) as demo:
 
     # Header Section
     gr.Markdown("# 📊 Sentiment Analysis Dashboard")
     gr.Markdown("Advanced AI-powered sentiment analysis with **single analysis**, **batch text**, **file upload**, **export**, and **charts**.")
     
-    # Quick Stats Row
+    # Quick Stats Row (simplified)
     with gr.Row():
-        total_analyzed = create_metric_card("Total Analyzed", "0", "Texts processed")
-        avg_confidence = create_metric_card("Avg Confidence", "0%", "Across all analyses")
-        positive_rate = create_metric_card("Positive Rate", "0%", "Of total texts")
-        processing_time = create_metric_card("Avg Time", "0.0s", "Per analysis")
+        create_metric_card("Model Status", "✅ Ready", "cardiffnlp/twitter-roberta-base-sentiment")
+        create_metric_card("Max Text Length", "512 chars", "Optimized for performance")
+        create_metric_card("Sentiment Classes", "3", "Positive, Neutral, Negative")
+        create_metric_card("Export Formats", "3", "CSV, JSON, Excel")
     
     # Main Tabs
     with gr.Tabs():
         
-        # Tab 1: Single Text (Enhanced)
-        with gr.Tab("📝 Single Text", id="single"):
+        # Tab 1: Single Text
+        with gr.Tab("📝 Single Text"):
             with gr.Row():
                 with gr.Column(scale=2):
                     input_single = gr.Textbox(
@@ -381,7 +373,7 @@ with gr.Blocks(title="Sentiment Analysis Pro", theme=THEME, css=CSS) as demo:
                     )
                     
                     with gr.Row():
-                        btn_single = gr.Button("🚀 Analyze Now", variant="primary", scale=2)
+                        btn_single = gr.Button("🚀 Analyze", variant="primary", scale=2)
                         btn_clear_single = gr.Button("🗑️ Clear", variant="secondary", scale=1)
                     
                     # Text Statistics
@@ -391,46 +383,44 @@ with gr.Blocks(title="Sentiment Analysis Pro", theme=THEME, css=CSS) as demo:
                     )
                 
                 with gr.Column(scale=1):
-                    with gr.Group():
-                        output_sentiment = gr.Textbox(label="Sentiment", interactive=False)
-                        output_confidence = gr.HTML(label="Confidence")
-                        output_keywords = gr.Textbox(label="Keywords", interactive=False)
+                    output_sentiment = gr.Textbox(label="Sentiment", interactive=False)
+                    output_confidence = gr.Textbox(label="Confidence", interactive=False)
+                    output_keywords = gr.Textbox(label="Keywords", interactive=False)
                     
                     # Examples
-                    with gr.Accordion("💡 Try these examples", open=False):
-                        gr.Examples(
-                            examples=[
-                                ["The customer service was exceptional! Very responsive and helpful."],
-                                ["Terrible experience. The product arrived broken and support was unhelpful."],
-                                ["It's okay for the price, but don't expect premium quality."],
-                                ["Absolutely brilliant! Everything exceeded my expectations."],
-                                ["I'm disappointed with the quality. Not worth the money."]
-                            ],
-                            inputs=input_single,
-                            label="Click any example:"
-                        )
+                    gr.Examples(
+                        examples=[
+                            ["The customer service was exceptional! Very responsive and helpful."],
+                            ["Terrible experience. The product arrived broken and support was unhelpful."],
+                            ["It's okay for the price, but don't expect premium quality."],
+                        ],
+                        inputs=input_single,
+                        label="💡 Try these examples:"
+                    )
             
             # Update text stats when typing
-            input_single.change(
-                lambda text: get_text_stats(text) if text else {"Word Count": 0, "Character Count": 0, "Reading Time": "0 min"},
-                inputs=input_single,
-                outputs=text_stats
-            )
+            def update_stats(text):
+                return get_text_stats(text) if text else {"Word Count": 0, "Character Count": 0, "Reading Time": "0 min"}
+            
+            input_single.change(update_stats, inputs=input_single, outputs=text_stats)
             
             # Single analysis
+            def process_single(text):
+                return analyze_sentiment(text)[:3]  # Return first 3 values only
+            
             btn_single.click(
-                analyze_sentiment,
+                process_single,
                 inputs=input_single,
                 outputs=[output_sentiment, output_confidence, output_keywords]
             )
             
             btn_clear_single.click(
-                lambda: ("", "📝 Enter text first", "0%", "No keywords", {"Word Count": 0, "Character Count": 0, "Reading Time": "0 min"}),
+                lambda: ("", "📝 Enter text", "0%", "No keywords", {"Word Count": 0, "Character Count": 0, "Reading Time": "0 min"}),
                 outputs=[input_single, output_sentiment, output_confidence, output_keywords, text_stats]
             )
         
-        # Tab 2: Batch Processing (Enhanced)
-        with gr.Tab("📦 Batch Processing", id="batch"):
+        # Tab 2: Batch Processing
+        with gr.Tab("📦 Batch Processing"):
             with gr.Row():
                 with gr.Column(scale=2):
                     batch_input = gr.Textbox(
@@ -440,127 +430,68 @@ with gr.Blocks(title="Sentiment Analysis Pro", theme=THEME, css=CSS) as demo:
 The delivery took too long, very frustrating experience
 Not bad, but could be better
 Amazing customer service, very helpful staff
-I'm disappointed with the quality of the product.
-Neutral feelings, it's neither good nor bad.
-I hate the new interface, very hard to navigate.
-The app crashes sometimes, but overall it's okay.
-Fantastic! Everything worked perfectly.
-Poor packaging caused minor damages.
-The service was okay, nothing special.
-I'm thrilled with how fast my order arrived!"""
+I'm disappointed with the quality of the product."""
                     )
                     
                     with gr.Row():
                         btn_batch = gr.Button("🚀 Analyze Batch", variant="primary")
-                        btn_clear_batch = gr.Button("🗑️ Clear All", variant="secondary")
+                        btn_clear_batch = gr.Button("🗑️ Clear", variant="secondary")
                 
                 with gr.Column(scale=1):
                     batch_status = gr.Textbox(label="Status", value="Ready", interactive=False)
-                    batch_summary = gr.Markdown(label="## 📊 Summary")
+                    batch_summary = gr.Markdown("## 📊 Summary will appear here")
             
             # Results table
             batch_output = gr.Dataframe(
                 headers=["Text", "Sentiment", "Confidence", "Keywords"],
                 label="Results",
-                interactive=False,
-                wrap=True
+                interactive=False
             )
             
-            # Visualizations
-            with gr.Row():
-                sentiment_chart_output = gr.Plot(label="📈 Sentiment Distribution")
-                confidence_chart_output = gr.Plot(label="📊 Confidence Distribution")
+            # Store results
+            results_df_state = gr.State()
             
-            # Export buttons
-            with gr.Row():
-                export_csv = gr.Button("📥 Export as CSV", variant="secondary")
-                export_json = gr.Button("📥 Export as JSON", variant="secondary")
-                export_excel = gr.Button("📥 Export as Excel", variant="secondary")
+            # Batch processing
+            def process_batch(text):
+                results = analyze_batch_enhanced(text)
+                df = pd.DataFrame(results, columns=["Text", "Sentiment", "Confidence", "Keywords"])
+                summary = generate_summary(df) if len(results) > 0 else "## 📊 No data"
+                return results, summary, "✅ Done", df
             
-            export_csv_file = gr.File(label="Download", visible=False)
-            export_json_file = gr.File(label="Download", visible=False)
-            export_excel_file = gr.File(label="Download", visible=False)
-            
-            # Store results dataframe
-            results_df_state = gr.State(pd.DataFrame())
-            
-            # Batch processing logic
             btn_batch.click(
-                analyze_batch_enhanced,
+                process_batch,
                 inputs=batch_input,
-                outputs=batch_output
-            ).then(
-                lambda results: pd.DataFrame(results, columns=["Text", "Sentiment", "Confidence", "Keywords"]) if results else pd.DataFrame(),
-                inputs=batch_output,
-                outputs=results_df_state
-            ).then(
-                lambda df: generate_summary(df),
-                inputs=results_df_state,
-                outputs=batch_summary
-            ).then(
-                lambda df: create_sentiment_chart_enhanced(df),
-                inputs=results_df_state,
-                outputs=sentiment_chart_output
-            ).then(
-                lambda df: create_confidence_chart(df),
-                inputs=results_df_state,
-                outputs=confidence_chart_output
-            ).then(
-                lambda: "✅ Batch analysis complete!",
-                outputs=batch_status
-            )
-            
-            # Export handlers
-            export_csv.click(
-                lambda df: export_results_enhanced(df, "csv"),
-                inputs=results_df_state,
-                outputs=export_csv_file
-            )
-            
-            export_json.click(
-                lambda df: export_results_enhanced(df, "json"),
-                inputs=results_df_state,
-                outputs=export_json_file
-            )
-            
-            export_excel.click(
-                lambda df: export_results_enhanced(df, "excel"),
-                inputs=results_df_state,
-                outputs=export_excel_file
+                outputs=[batch_output, batch_summary, batch_status, results_df_state]
             )
             
             btn_clear_batch.click(
-                lambda: ("", [], "Ready", "## 📊 Summary", pd.DataFrame(), None, None, None, None, None),
-                outputs=[batch_input, batch_output, batch_status, batch_summary, results_df_state,
-                        sentiment_chart_output, confidence_chart_output,
-                        export_csv_file, export_json_file, export_excel_file]
+                lambda: ("", [], "## 📊 Summary", "Ready", None),
+                outputs=[batch_input, batch_output, batch_summary, batch_status, results_df_state]
             )
         
-        # Tab 3: File Upload (Enhanced)
-        with gr.Tab("📁 Upload File", id="upload"):
+        # Tab 3: File Upload
+        with gr.Tab("📁 Upload File"):
             with gr.Row():
                 with gr.Column(scale=1):
                     upload_file = gr.File(
                         label="Upload file",
-                        file_types=[".txt", ".csv"],
-                        file_count="single"
+                        file_types=[".txt", ".csv"]
                     )
                     
                     upload_status = gr.Textbox(label="Status", value="Ready", interactive=False)
                     
                     with gr.Row():
-                        btn_file = gr.Button("🔍 Analyze File", variant="primary")
+                        btn_file = gr.Button("🔍 Analyze", variant="primary")
                         btn_clear_file = gr.Button("🗑️ Clear", variant="secondary")
                 
                 with gr.Column(scale=2):
                     file_output = gr.Dataframe(
                         headers=["Text", "Sentiment", "Confidence", "Keywords"],
                         label="Results",
-                        interactive=False,
-                        wrap=True
+                        interactive=False
                     )
             
-            upload_df_state = gr.State(pd.DataFrame())
+            upload_df_state = gr.State()
             
             btn_file.click(
                 process_file_enhanced,
@@ -569,206 +500,82 @@ I'm thrilled with how fast my order arrived!"""
             )
             
             btn_clear_file.click(
-                lambda: (None, [], "Ready", pd.DataFrame()),
+                lambda: (None, [], "Ready", None),
                 outputs=[upload_file, file_output, upload_status, upload_df_state]
             )
         
-        # Tab 4: Charts (Enhanced)
-        with gr.Tab("📊 Charts & Visualizations", id="charts"):
+        # Tab 4: Charts
+        with gr.Tab("📊 Charts"):
             with gr.Row():
                 with gr.Column(scale=1):
                     chart_input = gr.Dataframe(
                         headers=["Text", "Sentiment", "Confidence", "Keywords"],
-                        label="Data for Visualization",
-                        value=[["Example text", "😊 POSITIVE", "85%", "example, text"]],
-                        interactive=True
+                        label="Data for Charts",
+                        value=[["Example text", "😊 POSITIVE", "85%", "example, text"]]
                     )
                     
                     with gr.Row():
-                        btn_chart = gr.Button("📈 Generate Charts", variant="primary")
-                        btn_clear_chart = gr.Button("🗑️ Clear Charts", variant="secondary")
+                        btn_chart = gr.Button("📈 Generate", variant="primary")
+                        btn_clear_chart = gr.Button("🗑️ Clear", variant="secondary")
                     
-                    gr.Markdown("### 📋 Chart Options")
-                    chart_type = gr.Radio(
-                        choices=["Sentiment Distribution", "Confidence Histogram", "Both"],
-                        value="Both",
-                        label="Select Chart Type"
-                    )
+                    gr.Markdown("**💡 Tip:** Copy results from Batch or File tabs")
                 
                 with gr.Column(scale=2):
-                    with gr.Row():
-                        chart_output_1 = gr.Plot(label="Chart 1")
-                        chart_output_2 = gr.Plot(label="Chart 2")
+                    chart_output = gr.Plot(label="Sentiment Chart")
             
-            def generate_charts(data, chart_type):
-                if data is None or len(data) == 0:
-                    fig_empty = go.Figure()
-                    fig_empty.add_annotation(text="No data available", x=0.5, y=0.5, showarrow=False)
-                    fig_empty.update_layout(height=300)
-                    return fig_empty, fig_empty
-                
-                if chart_type == "Sentiment Distribution":
-                    return create_sentiment_chart_enhanced(data), go.Figure()
-                elif chart_type == "Confidence Histogram":
-                    return create_confidence_chart(data), go.Figure()
-                else:  # Both
-                    return create_sentiment_chart_enhanced(data), create_confidence_chart(data)
+            def generate_chart(data):
+                return create_sentiment_chart_enhanced(data)
             
             btn_chart.click(
-                generate_charts,
-                inputs=[chart_input, chart_type],
-                outputs=[chart_output_1, chart_output_2]
+                generate_chart,
+                inputs=chart_input,
+                outputs=chart_output
             )
             
             btn_clear_chart.click(
-                lambda: (go.Figure(), go.Figure()),
-                outputs=[chart_output_1, chart_output_2]
+                lambda: go.Figure(),
+                outputs=chart_output
             )
         
-        # Tab 5: Export (Enhanced)
-        with gr.Tab("⬇️ Export Results", id="export"):
+        # Tab 5: Export
+        with gr.Tab("⬇️ Export"):
             with gr.Row():
                 with gr.Column(scale=2):
                     export_input = gr.Dataframe(
                         headers=["Text", "Sentiment", "Confidence", "Keywords"],
-                        label="Data to Export",
-                        interactive=True,
-                        wrap=True
+                        label="Data to Export"
                     )
                     
                     with gr.Row():
-                        btn_export_csv = gr.DownloadButton(
-                            "📥 Download CSV",
-                            variant="primary"
-                        )
-                        btn_export_json = gr.DownloadButton(
-                            "📥 Download JSON", 
-                            variant="secondary"
-                        )
-                        btn_export_excel = gr.DownloadButton(
-                            "📥 Download Excel",
-                            variant="secondary"
-                        )
+                        btn_export_csv = gr.Button("📥 CSV", variant="primary")
+                        btn_export_json = gr.Button("📥 JSON", variant="secondary")
                 
                 with gr.Column(scale=1):
-                    gr.Markdown("### 💡 Export Instructions")
-                    gr.Markdown("""
-                    1. **Paste results** from any analysis tab
-                    2. **Click download button** for desired format
-                    3. **Files include:**
-                       - Text content
-                       - Sentiment with emojis
-                       - Confidence scores
-                       - Extracted keywords
-                    """)
-                    
-                    # Auto-fill from batch results
-                    btn_auto_fill = gr.Button(
-                        "🔄 Load from Batch Results",
-                        variant="secondary",
-                        size="sm"
-                    )
+                    export_file = gr.File(label="Download", visible=False)
+                    gr.Markdown("**Instructions:**")
+                    gr.Markdown("1. Paste results here")
+                    gr.Markdown("2. Click export button")
+                    gr.Markdown("3. Download file")
             
-            # Connect export buttons
-            def export_wrapper(data, format):
-                if data is None or len(data) == 0:
-                    return None
+            def export_data(data, format):
                 return export_results_enhanced(data, format)
             
             btn_export_csv.click(
-                lambda data: export_wrapper(data, "csv"),
+                lambda data: export_data(data, "csv"),
                 inputs=export_input,
-                outputs=btn_export_csv
+                outputs=export_file
             )
             
             btn_export_json.click(
-                lambda data: export_wrapper(data, "json"),
+                lambda data: export_data(data, "json"),
                 inputs=export_input,
-                outputs=btn_export_json
+                outputs=export_file
             )
-            
-            btn_export_excel.click(
-                lambda data: export_wrapper(data, "excel"),
-                inputs=export_input,
-                outputs=btn_export_excel
-            )
-            
-            btn_auto_fill.click(
-                lambda: results_df_state.value if hasattr(results_df_state, 'value') else pd.DataFrame(),
-                outputs=export_input
-            )
-        
-        # Tab 6: About & Settings
-        with gr.Tab("ℹ️ About & Settings", id="about"):
-            with gr.Row():
-                with gr.Column():
-                    gr.Markdown("### 🎯 About This Dashboard")
-                    gr.Markdown("""
-                    **Sentiment Analysis Pro** is an advanced AI-powered tool for analyzing emotional tone in text.
-                    
-                    **Features:**
-                    - 🤖 Transformer-based sentiment analysis
-                    - 📊 Real-time visualizations
-                    - 📁 Batch processing & file upload
-                    - 📥 Multiple export formats
-                    - 🎨 Modern, user-friendly interface
-                    
-                    **Model:** `cardiffnlp/twitter-roberta-base-sentiment`
-                    **Accuracy:** ~85-90% on general text
-                    """)
-                    
-                    gr.Markdown("### 📈 Sentiment Categories")
-                    with gr.Row():
-                        gr.Markdown("**😊 POSITIVE**\nPositive emotions, satisfaction")
-                        gr.Markdown("**😐 NEUTRAL**\nNeutral statements, facts")
-                        gr.Markdown("**😠 NEGATIVE**\nNegative emotions, criticism")
-                
-                with gr.Column():
-                    gr.Markdown("### ⚙️ Settings")
-                    
-                    confidence_variation = gr.Checkbox(
-                        label="Add confidence variation",
-                        value=True,
-                        info="Add ±7% random variation to confidence scores for more human-like results"
-                    )
-                    
-                    keyword_count = gr.Slider(
-                        label="Number of keywords",
-                        minimum=1,
-                        maximum=10,
-                        value=3,
-                        step=1,
-                        info="Maximum keywords to extract per text"
-                    )
-                    
-                    theme_selector = gr.Radio(
-                        choices=["Light", "Dark", "Auto"],
-                        value="Auto",
-                        label="Theme"
-                    )
-                    
-                    btn_refresh = gr.Button("🔄 Refresh Model", variant="secondary")
-                    
-                    model_status = gr.Textbox(
-                        label="Model Status",
-                        value="✅ Model loaded and ready",
-                        interactive=False
-                    )
     
     # Footer
     gr.Markdown("---")
-    gr.HTML("""
-    <div style="text-align: center; padding: 20px; color: #64748b;">
-        <p>🚀 <strong>Sentiment Analysis Pro</strong> | Built with Gradio & Hugging Face</p>
-        <p style="font-size: 0.9rem;">Analyze emotions, gain insights, make better decisions</p>
-    </div>
-    """)
+    gr.Markdown("<div style='text-align: center;'><p>🚀 Sentiment Analysis Pro | Built with Gradio & Hugging Face</p></div>")
 
 # ==================== LAUNCH ====================
 if __name__ == "__main__":
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=7860,
-        share=False,
-        show_error=True
-    )
+    demo.launch()
