@@ -111,21 +111,34 @@ def export_json(data):
     return tmp.name
 
 # -----------------------------
-# CHART FUNCTION
+# CHART FUNCTION (IMPROVED)
 # -----------------------------
 def sentiment_chart(data):
-    if not data or len(data) == 0:
+    # Convert input to DataFrame if needed
+    if data is None or len(data) == 0:
         return px.pie(values=[1], names=["No data"], title="Sentiment Distribution")
-    sentiments = []
-    for row in data:
-        s = row[1].split()[-1]  # Extract label without emoji
-        sentiments.append(s)
-    df = pd.DataFrame({"Sentiment": sentiments})
+    
+    if isinstance(data, pd.DataFrame):
+        df = data.copy()
+    else:  # list of lists
+        df = pd.DataFrame(data, columns=["Text", "Sentiment", "Confidence", "Keywords"])
+    
+    # Extract sentiment labels without emojis
+    df['Label'] = df['Sentiment'].apply(lambda x: x.split()[-1] if isinstance(x, str) else "NEUTRAL")
+    
+    # Count occurrences
+    counts = df['Label'].value_counts().to_dict()
+    
+    # Ensure all three sentiments are represented
+    for label in ["POSITIVE", "NEGATIVE", "NEUTRAL"]:
+        if label not in counts:
+            counts[label] = 0
+
     fig = px.pie(
-        df,
-        names="Sentiment",
+        names=list(counts.keys()),
+        values=list(counts.values()),
         title="Sentiment Distribution",
-        color="Sentiment",
+        color=list(counts.keys()),
         color_discrete_map={"POSITIVE": "green", "NEGATIVE": "red", "NEUTRAL": "gray"}
     )
     return fig
@@ -186,7 +199,11 @@ I'm thrilled with how fast my order arrived!"""
 
     # ---------------- Charts ----------------
     with gr.Tab("📊 Charts"):
-        chart_input = gr.Dataframe(headers=["Text", "Sentiment", "Confidence", "Keywords"], label="Paste results here for charts")
+        chart_input = gr.Dataframe(
+            headers=["Text", "Sentiment", "Confidence", "Keywords"],
+            label="Paste results here for charts",
+            value=[["Example text", "😊 POSITIVE", "85%", "example, text"]]
+        )
         chart_output = gr.Plot(label="Sentiment Chart")
         btn_chart = gr.Button("Generate Chart")
         btn_chart.click(sentiment_chart, chart_input, chart_output)
