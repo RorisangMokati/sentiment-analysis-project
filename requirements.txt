@@ -1,8 +1,9 @@
 huggingface-hub
-gradio
 requests
-plotly
-transformers
-torch
-
+gradio>=4.0.0
+pandas>=2.0.0
+plotly>=5.0.0
+transformers>=4.30.0
+torch>=2.0.0
+numpy>=1.24.0
 
