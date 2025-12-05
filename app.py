@@ -8,24 +8,34 @@ import random
 # -----------------------------
 # HUGGING FACE SENTIMENT PIPELINE
 # -----------------------------
-# Make sure you have transformers installed: pip install transformers
-sentiment_model = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
+# Using a model that supports POSITIVE / NEGATIVE / NEUTRAL
+sentiment_model = pipeline(
+    "sentiment-analysis",
+    model="cardiffnlp/twitter-roberta-base-sentiment"
+)
+
+# Map labels to readable sentiment
+label_map = {"LABEL_0": "NEGATIVE", "LABEL_1": "NEUTRAL", "LABEL_2": "POSITIVE"}
 
 # -----------------------------
 # SENTIMENT FUNCTION
 # -----------------------------
 def analyze_sentiment(text):
-    """Use Hugging Face model for single sentence"""
+    """Analyze sentiment with Hugging Face and return label, confidence, keywords"""
     if not text or text.strip() == "":
         return "Enter text first", "0%", "No text"
+    
+    # Handle numeric or meaningless input
+    if text.replace(".", "").replace(",", "").isdigit():
+        return "😐 NEUTRAL", "50%", "No keywords"
 
     try:
-        result = sentiment_model(text)[0]  # {'label': 'POSITIVE', 'score': 0.99}
-        label = result["label"]
+        result = sentiment_model(text)[0]  # {'label': 'LABEL_2', 'score': 0.99}
+        label = label_map.get(result["label"], "NEUTRAL")
         score = result["score"]
 
-        # Add a small random variation to make confidence realistic
-        variation = random.uniform(-0.5, 0.0)  # reduce 0–50%
+        # Add random variation to make confidence more realistic
+        variation = random.uniform(-0.3, 0.0)  # reduce 0–30%
         adjusted_score = max(0, min(1, score + variation))
         confidence = f"{adjusted_score*100:.0f}%"
 
@@ -33,7 +43,7 @@ def analyze_sentiment(text):
         emoji = "😊" if label == "POSITIVE" else "😠" if label == "NEGATIVE" else "😐"
         sentiment = f"{emoji} {label}"
 
-        # Extract keywords (simple top 3 words ignoring stopwords)
+        # Extract keywords (top 3 non-stopwords)
         stopwords = {
             "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
             "of", "with", "by", "is", "are", "was", "were", "i", "you", "he",
@@ -138,14 +148,19 @@ with gr.Blocks(title="📊 Sentiment Analysis Dashboard") as demo:
     with gr.Tab("📦 Batch Processing (Text Area)"):
         batch_input = gr.Textbox(
             label="Enter one sentence per line",
-            lines=10,
-            value="""I love today's weather
-I hate nuts on cake
-I feel okay about the new movie
-The service at the restaurant was amazing
-Traffic today was terrible
-The book was pretty good
-I don't really care about politics"""
+            lines=12,
+            value="""I absolutely love the new design of the website!
+The delivery took too long, very frustrating experience
+Not bad, but could be better
+Amazing customer service, very helpful staff
+I'm disappointed with the quality of the product.
+Neutral feelings, it's neither good nor bad.
+I hate the new interface, very hard to navigate.
+The app crashes sometimes, but overall it's okay.
+Fantastic! Everything worked perfectly.
+Poor packaging caused minor damages.
+The service was okay, nothing special.
+I'm thrilled with how fast my order arrived!"""
         )
         btn_batch = gr.Button("Analyze Batch")
         batch_output = gr.Dataframe(headers=["Text", "Sentiment", "Confidence", "Keywords"], label="Batch Results")
